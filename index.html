@@ -1,0 +1,577 @@
+// ================================================================
+// ROBOT BLE PRO - DÒ LINE TỐC ĐỘ CAO & XỬ LÝ NÉT ĐỨT / GÓC CUA GẮT
+// Phần cứng: ESP32-WROVER + CD74HC4067 (12 LDR) + 2x TB6612FNG
+// ================================================================
+#include <Arduino.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+#include <Preferences.h>
+
+#define SERVICE_UUID           "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
+#define CHARACTERISTIC_UUID_RX "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
+#define CHARACTERISTIC_UUID_TX "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+
+// ==================== CẤU HÌNH CHÂN ĐỘNG CƠ (TB6612FNG) ====================
+const int R_PWM = 23, R_IN1 = 21, R_IN2 = 22;   // U6 - Động cơ Phải
+const int L_PWM = 25, L_IN1 = 27, L_IN2 = 26;   // U7 - Động cơ Trái
+const int STBY  = 33;                           // Chân STBY chung
+#define R_INVERT false
+#define L_INVERT false
+#define PWM_FREQ 20000
+#define PWM_RES  8
+
+// ==================== ENCODER ====================
+const int ENC_L_A = 4, ENC_R_A = 14;
+volatile long pulseLeft = 0, pulseRight = 0;
+void IRAM_ATTR isrL() { pulseLeft++; }
+void IRAM_ATTR isrR() { pulseRight++; }
+
+// ==================== CẢM BIẾN 12 MẮT (CD74HC4067) ====================
+// LƯU Ý: Trên schematic chân SIG là IO32, nếu mạch thực tế nối IO34 thì giữ 34,
+// nếu theo đúng schematic gốc thì đổi SIG_PIN thành 32.
+#define NS 12
+const uint8_t MUX_S[4]   = {19, 18, 17, 16};
+const uint8_t SIG_PIN    = 34; 
+const uint8_t MUX_CH[NS] = {11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0};
+const uint16_t POS[NS]   = {0, 1000, 2000, 3000, 4000, 5000,
+                            6000, 7000, 8000, 9000, 10000, 11000};
+#define SETPOINT 5500
+#define INVERT_COLOR false
+
+uint16_t calMin[NS], calMax[NS], rawv[NS];
+uint16_t pattern = 0;
+unsigned int lastLinePos = SETPOINT;
+
+// ==================== THÔNG SỐ ĐIỀU KHIỂN (CHỈNH QUA WEB BLE) ====================
+Preferences prefs;
+
+float KP          = 0.032f;  // Hệ số P
+float KD          = 0.280f;  // Hệ số D (chống văng khi bẻ góc)
+int   MAX_SPD     = 210;     // Tốc độ tối đa trên đoạn thẳng (0..255)
+int   MIN_SPD     = 105;     // Tốc độ nền thấp nhất khi vào cua gắt
+float K_DECEL     = 0.022f;  // Hệ số tự động giảm tốc khi |error| tăng
+int   TURN_OUT    = 175;     // Tốc độ bánh ngoài khi bẻ góc vuông / răng cưa
+int   TURN_IN     = -85;     // Tốc độ bánh trong khi bẻ góc (âm = xoay lùi bánh trong)
+int   SPIN_OUT    = 190;     // Tốc độ bánh ngoài khi mất line ở góc nhọn
+int   SPIN_IN     = -140;    // Tốc độ bánh trong khi mất line ở góc nhọn
+int   DASH_ERR    = 1800;    // Ngưỡng |error| tối đa để nhận diện là đang đi thẳng vào Nét Đứt
+int   DASH_MAX_MS = 450;     // Thời gian tối đa phóng thẳng qua khoảng trắng nét đứt (ms)
+int   BRAKE_MS    = 20;      // Thời gian phanh ngược khử quán tính khi lao từ thẳng vào cua gắt (ms)
+int   STOP_CNT2   = 1;       // Số lần gặp vạch đen toàn bộ (sau thời gian IGNORE_MS) để dừng
+int   IGNORE_MS   = 1800;    // Bỏ qua vạch đen ngang đầu tiên sau START trong X (ms)
+int   SENSOR_THR  = 450;     // Ngưỡng nhận diện mắt thấy line (0..1000)
+
+int   speed_dk    = 130;     // Tốc độ chạy Manual
+
+// ==================== BIẾN TRẠNG THÁI CHẠY ====================
+int   lastError = 0;
+float filteredD = 0;
+int   currentSpd = 0;
+int   cnt1 = 0, cnt2 = 0;
+bool  whiteLatched = false;
+bool  blackLatched = false;
+bool  inDashMode   = false;
+bool  rememberEdgeL = false, rememberEdgeR = false;
+unsigned long whiteStartMs = 0;
+unsigned long runStartMs   = 0;
+unsigned long finishMs     = 0;
+unsigned long highSpeedStraightMs = 0;
+
+bool runLine = false, testMode = false;
+bool calibrated = false, calibrating = false;
+unsigned long calEnd = 0, lastRawTime = 0, lastStatusTime = 0;
+#define CAL_TIME 5000
+#define STATUS_INTERVAL 120
+String currentModeName = "IDLE", currentCaseName = "-";
+
+BLEServer*         pServer = nullptr;
+BLECharacteristic* pTx     = nullptr;
+bool deviceConnected = false, oldDeviceConnected = false;
+
+// ==================== LƯU / TẢI THÔNG SỐ TỪ FLASH ====================
+void loadParams() {
+    prefs.begin("robot", true);
+    KP          = prefs.getFloat("kp", KP);
+    KD          = prefs.getFloat("kd", KD);
+    MAX_SPD     = prefs.getInt("maxs", MAX_SPD);
+    MIN_SPD     = prefs.getInt("mins", MIN_SPD);
+    K_DECEL     = prefs.getFloat("kdec", K_DECEL);
+    TURN_OUT    = prefs.getInt("tout", TURN_OUT);
+    TURN_IN     = prefs.getInt("tin", TURN_IN);
+    SPIN_OUT    = prefs.getInt("sout", SPIN_OUT);
+    SPIN_IN     = prefs.getInt("sin", SPIN_IN);
+    DASH_ERR    = prefs.getInt("derr", DASH_ERR);
+    DASH_MAX_MS = prefs.getInt("dms", DASH_MAX_MS);
+    BRAKE_MS    = prefs.getInt("bms", BRAKE_MS);
+    STOP_CNT2   = prefs.getInt("scnt", STOP_CNT2);
+    IGNORE_MS   = prefs.getInt("igms", IGNORE_MS);
+    SENSOR_THR  = prefs.getInt("sthr", SENSOR_THR);
+    prefs.end();
+}
+
+void saveParams() {
+    prefs.begin("robot", false);
+    prefs.putFloat("kp", KP);
+    prefs.putFloat("kd", KD);
+    prefs.putInt("maxs", MAX_SPD);
+    prefs.putInt("mins", MIN_SPD);
+    prefs.putFloat("kdec", K_DECEL);
+    prefs.putInt("tout", TURN_OUT);
+    prefs.putInt("tin", TURN_IN);
+    prefs.putInt("sout", SPIN_OUT);
+    prefs.putInt("sin", SPIN_IN);
+    prefs.putInt("derr", DASH_ERR);
+    prefs.putInt("dms", DASH_MAX_MS);
+    prefs.putInt("bms", BRAKE_MS);
+    prefs.putInt("scnt", STOP_CNT2);
+    prefs.putInt("igms", IGNORE_MS);
+    prefs.putInt("sthr", SENSOR_THR);
+    prefs.end();
+}
+
+// ==================== ĐỌC CẢM BIẾN & CALIB ====================
+void readRaw() {
+    for (int i = 0; i < NS; i++) {
+        for (int b = 0; b < 4; b++) digitalWrite(MUX_S[b], (MUX_CH[i] >> b) & 1);
+        delayMicroseconds(120); // Tối ưu tốc độ quét mux
+        analogRead(SIG_PIN);
+        rawv[i] = (analogRead(SIG_PIN) + analogRead(SIG_PIN)) >> 1;
+    }
+}
+
+void resetCal() {
+    for (int i = 0; i < NS; i++) { calMin[i] = 4095; calMax[i] = 0; }
+}
+
+void calibrateStep() {
+    readRaw();
+    for (int i = 0; i < NS; i++) {
+        if (rawv[i] < calMin[i]) calMin[i] = rawv[i];
+        if (rawv[i] > calMax[i]) calMax[i] = rawv[i];
+    }
+}
+
+bool channelOk(int i) { return calMax[i] > calMin[i] + 250; }
+
+int docSensor() {
+    readRaw();
+    uint32_t s = 0, w = 0;
+    int cnt = 0;
+    pattern = 0;
+    for (int i = 0; i < NS; i++) {
+        int range = (int)calMax[i] - (int)calMin[i];
+        int v = 0;
+        if (range > 50) {
+            v = constrain(((long)rawv[i] - calMin[i]) * 1000 / range, 0, 1000);
+            if (INVERT_COLOR) v = 1000 - v;
+        }
+        if (v > SENSOR_THR) { pattern |= (1 << i); cnt++; }
+        if (v > 100) { s += (uint32_t)v * POS[i]; w += v; }
+    }
+    if (w > 0) lastLinePos = s / w;
+    return cnt;
+}
+
+// ==================== ĐIỀU KHIỂN ĐỘNG CƠ & PHANH TB6612 ====================
+void pwmSetup() {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    ledcAttach(R_PWM, PWM_FREQ, PWM_RES);
+    ledcAttach(L_PWM, PWM_FREQ, PWM_RES);
+#else
+    ledcSetup(0, PWM_FREQ, PWM_RES); ledcAttachPin(R_PWM, 0);
+    ledcSetup(1, PWM_FREQ, PWM_RES); ledcAttachPin(L_PWM, 1);
+#endif
+}
+
+void pwmWrite(bool right, int duty) {
+#if ESP_ARDUINO_VERSION_MAJOR >= 3
+    ledcWrite(right ? R_PWM : L_PWM, duty);
+#else
+    ledcWrite(right ? 0 : 1, duty);
+#endif
+}
+
+void setMotor(bool right, int sp) {
+    sp = constrain(sp, -255, 255);
+    bool fwd = (sp >= 0) ^ (right ? R_INVERT : L_INVERT);
+    int in1 = right ? R_IN1 : L_IN1;
+    int in2 = right ? R_IN2 : L_IN2;
+    if (sp == 0) {
+        // Phanh điện từ (Short Brake) trên TB6612FNG: IN1 = HIGH, IN2 = HIGH
+        digitalWrite(in1, HIGH);
+        digitalWrite(in2, HIGH);
+        pwmWrite(right, 255);
+    } else {
+        digitalWrite(in1, fwd ? HIGH : LOW);
+        digitalWrite(in2, fwd ? LOW : HIGH);
+        pwmWrite(right, abs(sp));
+    }
+}
+
+void move(int left, int right) {
+    setMotor(false, left);
+    setMotor(true, right);
+}
+
+void stopMotor() { move(0, 0); }
+
+// Phanh xung ngược khử quán tính khi từ đoạn thẳng tốc độ cao lao vào góc cua
+void activeBrakePulse() {
+    if (BRAKE_MS > 0 && millis() - highSpeedStraightMs < 150) {
+        move(-160, -160);
+        delay(BRAKE_MS);
+        highSpeedStraightMs = 0;
+    }
+}
+
+// ==================== BLE GIAO TIẾP ====================
+void bleSend(const char* msg) {
+    if (deviceConnected && pTx) {
+        pTx->setValue((uint8_t*)msg, strlen(msg));
+        pTx->notify();
+        delay(3);
+    }
+    Serial.println(msg);
+}
+
+void sendAllParams() {
+    char b[240];
+    snprintf(b, sizeof(b),
+        "CFG:%.4f,%.4f,%d,%d,%.4f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+        KP, KD, MAX_SPD, MIN_SPD, K_DECEL,
+        TURN_OUT, TURN_IN, SPIN_OUT, SPIN_IN,
+        DASH_ERR, DASH_MAX_MS, BRAKE_MS, STOP_CNT2, IGNORE_MS, SENSOR_THR);
+    bleSend(b);
+}
+
+void sendStatus() {
+    if (!deviceConnected || millis() - lastStatusTime < STATUS_INTERVAL) return;
+    lastStatusTime = millis();
+    char pat[NS + 1];
+    for (int i = 0; i < NS; i++) pat[i] = (pattern & (1 << i)) ? '1' : '0';
+    pat[NS] = 0;
+
+    unsigned long elapsed = runLine ? (millis() - runStartMs) : finishMs;
+    char buf[240];
+    snprintf(buf, sizeof(buf),
+        "{\"mode\":\"%s\",\"case\":\"%s\",\"pos\":%u,\"pat\":\"%s\",\"spd\":%d,\"err\":%d,\"cal\":%d,\"c1\":%d,\"c2\":%d,\"ms\":%lu}",
+        currentModeName.c_str(), currentCaseName.c_str(), lastLinePos, pat,
+        currentSpd, lastError, calibrating ? 2 : (calibrated ? 1 : 0), cnt1, cnt2, elapsed);
+    pTx->setValue((uint8_t*)buf, strlen(buf));
+    pTx->notify();
+}
+
+// ==================== GIẢI THUẬT DÒ LINE TỐC ĐỘ CAO ====================
+void finishRun() {
+    move(-180, -180);
+    delay(25); // Phanh ngược nhẹ để đứng im ngay trong ô Đích
+    stopMotor();
+    runLine = false;
+    finishMs = millis() - runStartMs;
+    currentSpd = 0;
+    currentModeName = "DONE";
+    currentCaseName = "FINISH";
+    char msg[64];
+    snprintf(msg, sizeof(msg), "LOG:VE DICH! %.2fs", finishMs / 1000.0f);
+    bleSend(msg);
+}
+
+void lineFollowPID() {
+    int cnt = docSensor();
+
+    // Kiểm tra nhóm mắt rìa trái (mắt 0, 1) và rìa phải (mắt 10, 11)
+    bool edgeL = (pattern & 0b000000000011) != 0;
+    bool edgeR = (pattern & 0b110000000000) != 0;
+
+    // 1. KIỂM TRA VẠCH ĐEN NGANG / Ô ĐÍCH (Nhiều mắt cùng đen: >= 10 mắt)
+    if (cnt >= 10) {
+        if (!blackLatched) {
+            blackLatched = true;
+            // Bỏ qua vạch chữ thập đầu tiên ngay sau vạch START
+            if (millis() - runStartMs > (unsigned long)IGNORE_MS) {
+                cnt2++;
+                if (cnt2 >= STOP_CNT2) {
+                    finishRun();
+                    return;
+                }
+            }
+        }
+        // Nếu đang băng qua vạch chữ thập đầu tiên thì giữ chạy thẳng
+        currentCaseName = "CROSS_LINE";
+        currentSpd = MAX_SPD;
+        move(MAX_SPD, MAX_SPD);
+        return;
+    } else {
+        blackLatched = false;
+    }
+
+    // 2. XỬ LÝ KHI MẤT LINE (000000000000): PHÂN BIỆT NÉT ĐỨT vs VĂNG CUA GẮT
+    if (cnt == 0) {
+        if (!whiteLatched) {
+            whiteLatched = true;
+            whiteStartMs = millis();
+            // Nếu trước khi mất line, xe đang ở gần tâm và không chạm mắt rìa -> NÉT ĐỨT!
+            if (abs(lastError) <= DASH_ERR && !rememberEdgeL && !rememberEdgeR) {
+                inDashMode = true;
+                cnt1++;
+            } else {
+                inDashMode = false;
+            }
+        }
+
+        // Nhánh 2A: Đang bay qua đoạn NÉT ĐỨT -> Giữ tốc độ cao & bám thẳng tâm!
+        if (inDashMode && (millis() - whiteStartMs < (unsigned long)DASH_MAX_MS)) {
+            currentCaseName = "DASH_LINE";
+            currentSpd = MAX_SPD;
+            int trim = (int)(lastError * KP * 0.25f); // Giữ hướng nhẹ theo sai số cuối
+            move(constrain(MAX_SPD + trim, -255, 255), constrain(MAX_SPD - trim, -255, 255));
+            return;
+        }
+
+        // Nhánh 2B: Mất line do văng khỏi góc cua 90 độ / đỉnh răng cưa -> Xoay bắt line gắt!
+        currentCaseName = "SPIN_RECOVERY";
+        currentSpd = SPIN_OUT;
+        if (rememberEdgeR || lastError > 0) {
+            move(SPIN_OUT, SPIN_IN);  // Xoay phải gắt
+        } else {
+            move(SPIN_IN, SPIN_OUT);  // Xoay trái gắt
+        }
+        return;
+    }
+
+    // Đã thấy lại line -> Reset trạng thái mất line
+    whiteLatched = false;
+    inDashMode   = false;
+    if (edgeL && !edgeR) { rememberEdgeL = true; rememberEdgeR = false; }
+    else if (edgeR && !edgeL) { rememberEdgeR = true; rememberEdgeL = false; }
+    else if (cnt <= 4 && abs((int)lastLinePos - SETPOINT) < 1500) {
+        rememberEdgeL = false; rememberEdgeR = false;
+    }
+
+    // 3. BẺ GÓC CUA GẮT (Khi mắt ngoài cùng thấy line hoặc dải mắt lệch hẳn sang 1 bên)
+    if (edgeR && !edgeL && cnt <= 7) {
+        activeBrakePulse();
+        currentCaseName = "SHARP_RIGHT";
+        currentSpd = TURN_OUT;
+        lastError = 5500;
+        move(TURN_OUT, TURN_IN);
+        return;
+    }
+    if (edgeL && !edgeR && cnt <= 7) {
+        activeBrakePulse();
+        currentCaseName = "SHARP_LEFT";
+        currentSpd = TURN_OUT;
+        lastError = -5500;
+        move(TURN_IN, TURN_OUT);
+        return;
+    }
+
+    // 4. BÁM LINE PID KẾT HỢP TỐC ĐỘ ĐỘNG (DYNAMIC SPEED: THẲNG NHANH - CUA CHẬM)
+    int error = (int)lastLinePos - SETPOINT;
+    int dErr  = error - lastError;
+    filteredD = 0.6f * filteredD + 0.4f * dErr; // Lọc nhiễu khâu D
+    lastError = error;
+
+    // Tính tốc độ nền tự động giảm khi |error| hoặc |dErr| lớn (vào cua)
+    int dynamicBase = MAX_SPD - (int)(abs(error) * K_DECEL) - (int)(abs(filteredD) * 0.04f);
+    dynamicBase = constrain(dynamicBase, MIN_SPD, MAX_SPD);
+    currentSpd  = dynamicBase;
+
+    if (abs(error) < 1000) {
+        currentCaseName = "STRAIGHT_MAX";
+        highSpeedStraightMs = millis();
+    } else {
+        currentCaseName = "CORNER_PID";
+    }
+
+    int adjust = (int)(error * KP + filteredD * KD);
+    int L = constrain(dynamicBase + adjust, -255, 255);
+    int R = constrain(dynamicBase - adjust, -255, 255);
+    move(L, R);
+}
+
+// ==================== XỬ LÝ LỆNH TỪ WEB BLE ====================
+void handleBLECommand(String cmd) {
+    cmd.trim();
+    if (cmd.startsWith("SPD:")) {
+        speed_dk = constrain(cmd.substring(4).toInt(), 30, 255);
+        char b[32]; snprintf(b, sizeof(b), "LOG:SPD=%d", speed_dk); bleSend(b); return;
+    }
+    if (cmd == "TEST") {
+        testMode = !testMode; runLine = false; stopMotor();
+        bleSend(testMode ? "LOG:TEST_ON" : "LOG:TEST_OFF"); return;
+    }
+    if (cmd == "CAL") {
+        runLine = false; testMode = false; stopMotor();
+        calibrated = false; calibrating = true; calEnd = millis() + CAL_TIME;
+        resetCal(); pattern = 0;
+        currentModeName = "CALIB"; currentCaseName = "CALIBRATING";
+        bleSend("LOG:CAL_START"); return;
+    }
+    // Nhận gói cấu hình toàn diện từ Web:
+    // SETALL:kp,kd,maxs,mins,kdec,tout,tin,sout,sin,derr,dms,bms,scnt,igms,sthr
+    if (cmd.startsWith("SETALL:")) {
+        float kp, kd, kdec;
+        int maxs, mins, tout, tin, sout, sin_v, derr, dms, bms, scnt, igms, sthr;
+        int n = sscanf(cmd.c_str() + 7, "%f,%f,%d,%d,%f,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+                       &kp, &kd, &maxs, &mins, &kdec, &tout, &tin, &sout, &sin_v,
+                       &derr, &dms, &bms, &scnt, &igms, &sthr);
+        if (n == 15) {
+            KP = kp; KD = kd;
+            MAX_SPD = constrain(maxs, 50, 255);
+            MIN_SPD = constrain(mins, 40, MAX_SPD);
+            K_DECEL = kdec;
+            TURN_OUT = constrain(tout, 0, 255);
+            TURN_IN  = constrain(tin, -255, 255);
+            SPIN_OUT = constrain(sout, 0, 255);
+            SPIN_IN  = constrain(sin_v, -255, 255);
+            DASH_ERR = constrain(derr, 300, 5000);
+            DASH_MAX_MS = constrain(dms, 50, 2000);
+            BRAKE_MS = constrain(bms, 0, 150);
+            STOP_CNT2 = constrain(scnt, 1, 10);
+            IGNORE_MS = constrain(igms, 0, 10000);
+            SENSOR_THR = constrain(sthr, 100, 900);
+            bleSend("LOG:CAP NHAT THONG SO OK!");
+            sendAllParams();
+        } else {
+            bleSend("LOG:LOI CU PHAP SETALL!");
+        }
+        return;
+    }
+    if (cmd == "SAVE") {
+        saveParams();
+        bleSend("LOG:DA LUU VAO FLASH ESP32!");
+        return;
+    }
+    if (cmd == "GETPID" || cmd == "GETCFG") {
+        sendAllParams();
+        return;
+    }
+    if (cmd == "AUTO") {
+        if (!calibrated) { bleSend("LOG:CHUA CALIB CAM BIEN!"); return; }
+        testMode = false; runLine = true;
+        lastError = 0; filteredD = 0; lastLinePos = SETPOINT;
+        pulseLeft = pulseRight = 0;
+        cnt1 = 0; cnt2 = 0;
+        whiteLatched = false; blackLatched = false; inDashMode = false;
+        rememberEdgeL = false; rememberEdgeR = false;
+        runStartMs = millis(); finishMs = 0; highSpeedStraightMs = 0;
+        currentModeName = "AUTO"; currentCaseName = "STRAIGHT_MAX";
+        bleSend("LOG:AUTO_START"); return;
+    }
+    if (cmd == "MANUAL") {
+        runLine = false; stopMotor();
+        currentSpd = 0;
+        currentModeName = "MANUAL"; currentCaseName = "IDLE";
+        bleSend("LOG:MODE_MANUAL"); return;
+    }
+    if (!runLine) {
+        if      (cmd == "FWD") move(speed_dk, speed_dk);
+        else if (cmd == "BWD") move(-speed_dk, -speed_dk);
+        else if (cmd == "LFT") move(-speed_dk, speed_dk);
+        else if (cmd == "RGT") move(speed_dk, -speed_dk);
+        else if (cmd == "STP") stopMotor();
+    }
+}
+
+class MyCallbacks : public BLECharacteristicCallbacks {
+    void onWrite(BLECharacteristic* c) override {
+        auto v = c->getValue();
+        if (v.length() > 0) handleBLECommand(String(v.c_str()));
+    }
+};
+
+class MyServerCallbacks : public BLEServerCallbacks {
+    void onConnect(BLEServer*) override {
+        deviceConnected = true;
+        bleSend("LOG:BLE_CONNECTED");
+    }
+    void onDisconnect(BLEServer*) override {
+        deviceConnected = false; stopMotor(); runLine = false;
+        BLEDevice::startAdvertising();
+    }
+};
+
+// ==================== SETUP ====================
+void setup() {
+    Serial.begin(115200);
+    loadParams();
+
+    pinMode(STBY, OUTPUT); digitalWrite(STBY, LOW);
+    pinMode(R_IN1, OUTPUT); pinMode(R_IN2, OUTPUT);
+    pinMode(L_IN1, OUTPUT); pinMode(L_IN2, OUTPUT);
+    pwmSetup();
+    stopMotor();
+
+    for (int b = 0; b < 4; b++) pinMode(MUX_S[b], OUTPUT);
+    pinMode(SIG_PIN, INPUT);
+    analogReadResolution(12);
+    analogSetPinAttenuation(SIG_PIN, ADC_11db);
+    resetCal();
+
+    pinMode(ENC_L_A, INPUT); pinMode(ENC_R_A, INPUT);
+    attachInterrupt(digitalPinToInterrupt(ENC_L_A), isrL, RISING);
+    attachInterrupt(digitalPinToInterrupt(ENC_R_A), isrR, RISING);
+
+    BLEDevice::init("ROBOT_BLE");
+    BLEDevice::setMTU(517);
+    pServer = BLEDevice::createServer();
+    pServer->setCallbacks(new MyServerCallbacks());
+    BLEService* svc = pServer->createService(SERVICE_UUID);
+    pTx = svc->createCharacteristic(CHARACTERISTIC_UUID_TX, BLECharacteristic::PROPERTY_NOTIFY);
+    pTx->addDescriptor(new BLE2902());
+    BLECharacteristic* rx = svc->createCharacteristic(CHARACTERISTIC_UUID_RX,
+        BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
+    rx->setCallbacks(new MyCallbacks());
+    svc->start();
+    BLEAdvertising* adv = BLEDevice::getAdvertising();
+    adv->addServiceUUID(SERVICE_UUID);
+    adv->setScanResponse(true);
+    BLEDevice::startAdvertising();
+
+    digitalWrite(STBY, HIGH);
+    Serial.println("ROBOT_BLE PRO READY!");
+}
+
+// ==================== LOOP ====================
+void loop() {
+    if (!deviceConnected && oldDeviceConnected) {
+        delay(300); BLEDevice::startAdvertising(); oldDeviceConnected = false;
+    }
+    if (deviceConnected && !oldDeviceConnected) {
+        oldDeviceConnected = true;
+        sendAllParams();
+    }
+
+    if (calibrating) {
+        calibrateStep();
+        if (millis() >= calEnd) {
+            calibrating = false; calibrated = true;
+            currentModeName = "IDLE"; currentCaseName = "-";
+            char bad[80] = "LOG:CAL_WARN mat:";
+            bool anyBad = false;
+            for (int c = 0; c < NS; c++) if (!channelOk(c)) {
+                char t[6]; snprintf(t, sizeof(t), " %d", c + 1);
+                strncat(bad, t, sizeof(bad) - strlen(bad) - 1); anyBad = true;
+            }
+            if (anyBad) bleSend(bad);
+            bleSend("LOG:CAL_DONE");
+        }
+    }
+
+    if (runLine)                          lineFollowPID();
+    else if (calibrated && !calibrating)  docSensor();
+    else                                  pattern = 0;
+
+    if (testMode && !calibrating && !runLine && deviceConnected && millis() - lastRawTime > 200) {
+        lastRawTime = millis();
+        char raw[120]; int n = snprintf(raw, sizeof(raw), "RAW:");
+        for (int i = 0; i < NS; i++)
+            n += snprintf(raw + n, sizeof(raw) - n, i ? ",%u" : "%u", rawv[i]);
+        bleSend(raw);
+    }
+
+    sendStatus();
+}
