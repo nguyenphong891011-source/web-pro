@@ -1,260 +1,236 @@
 <!DOCTYPE html>
-<html lang="vi">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ROBOT BLE PRO - TUNING DASHBOARD</title>
+<html lang="vi"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#07070d">
+<title>ROBOT BLE</title>
 <style>
-  :root {
-    --bg: #0f172a; --card: #1e293b; --accent: #38bdf8;
-    --green: #22c55e; --red: #ef4444; --amber: #f59e0b; --text: #f8fafc;
-  }
-  * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
-  body { margin: 0; padding: 12px; background: var(--bg); color: var(--text); }
-  .container { max-width: 900px; margin: auto; display: grid; gap: 12px; }
-  .card { background: var(--card); border-radius: 12px; padding: 14px; border: 1px solid #334155; }
-  h2, h3 { margin: 0 0 10px 0; font-size: 16px; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; }
-  .top-bar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
-  button {
-    border: none; border-radius: 8px; padding: 10px 14px; font-weight: 700;
-    cursor: pointer; color: #fff; background: #475569; transition: 0.15s;
-  }
-  button:active { transform: scale(0.96); }
-  .btn-blue { background: #0284c7; }
-  .btn-green { background: #16a34a; }
-  .btn-amber { background: #d97706; }
-  .btn-red { background: #dc2626; }
-  .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; text-align: center; }
-  .stat-box { background: #0f172a; padding: 8px; border-radius: 8px; border: 1px solid #334155; }
-  .stat-label { font-size: 11px; color: #94a3b8; }
-  .stat-val { font-size: 18px; font-weight: 800; margin-top: 2px; color: var(--accent); }
-  .leds { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; margin: 10px 0; }
-  .led {
-    height: 28px; border-radius: 6px; background: #334155;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 11px; font-weight: bold; color: #94a3b8;
-  }
-  .led.on { background: var(--green); color: #052e16; box-shadow: 0 0 10px var(--green); }
-  .param-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px; }
-  .param-item { background: #0f172a; padding: 10px; border-radius: 8px; border: 1px solid #334155; }
-  .param-head { display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 4px; font-weight: 600; }
-  .param-desc { font-size: 11px; color: #94a3b8; margin-bottom: 6px; }
-  .param-ctrl { display: flex; gap: 8px; align-items: center; }
-  .param-ctrl input[type=range] { flex: 1; accent-color: var(--accent); }
-  .param-ctrl input[type=number] {
-    width: 72px; background: #1e293b; color: #fff; border: 1px solid #475569;
-    border-radius: 6px; padding: 4px 6px; text-align: right; font-weight: bold;
-  }
-  .dpad { display: grid; grid-template-columns: repeat(3, 64px); gap: 8px; justify-content: center; margin-top: 8px; }
-  #logBox {
-    background: #020617; color: #38bdf8; font-family: monospace; font-size: 12px;
-    height: 110px; overflow-y: auto; padding: 8px; border-radius: 8px; border: 1px solid #334155;
-  }
-</style>
-</head>
-<body>
-<div class="container">
-  <!-- HEADER & CONNECT -->
-  <div class="card top-bar">
-    <div>
-      <h2 style="margin:0;">ROBOT BLE PRO - MAP2 RACING</h2>
-      <small id="connStatus" style="color:#94a3b8;">Chưa kết nối BLE</small>
-    </div>
-    <div style="display:flex; gap:6px; flex-wrap:wrap;">
-      <button class="btn-blue" onclick="connectBLE()">KẾT NỐI BLE</button>
-      <button class="btn-amber" onclick="sendCmd('CAL')">1. CALIB (5s)</button>
-      <button class="btn-green" onclick="sendCmd('AUTO')">2. CHẠY AUTO</button>
-      <button class="btn-red" onclick="sendCmd('MANUAL')">DỪNG / MANUAL</button>
-      <button onclick="sendCmd('TEST')">TEST RAW</button>
-    </div>
-  </div>
+:root{--bg:#07070d;--card:#0e0e18;--ln:#1f1f30;--tx:#c9c9d6;--dim:#5a5a72;--g:#00ff9d;--y:#ffd23f;--r:#ff3b5c;--c:#00e5ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:14px ui-monospace,Menlo,Consolas,monospace;padding:12px;display:flex;justify-content:center}
+.w{width:100%;max-width:560px;display:flex;flex-direction:column;gap:12px}
+.card{background:var(--card);border:1px solid var(--ln);border-radius:14px;padding:14px 16px}
+.t{font-size:11px;letter-spacing:.2em;color:var(--dim);text-transform:uppercase;margin-bottom:10px}
+.row{display:flex;gap:10px}.row>*{flex:1}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+button{font:inherit;cursor:pointer;border-radius:12px;border:1px solid var(--ln);background:#12121e;color:var(--tx);padding:13px 6px;text-transform:uppercase;letter-spacing:.08em;touch-action:manipulation}
+button:disabled{opacity:.35;cursor:not-allowed}
+.cn{border-color:var(--g);color:var(--g)}.cal{border-color:var(--c);color:var(--c)}.run{border-color:var(--g);color:var(--g)}.stop{border-color:var(--r);color:var(--r)}
+.box{background:#090912;border:1px solid var(--ln);border-radius:12px;padding:8px 12px}
+.k{font-size:10px;letter-spacing:.18em;color:var(--dim)}.v{font-size:19px;font-weight:700;margin-top:3px;overflow:hidden;text-overflow:ellipsis}
+.sn{display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-top:6px}
+.sn div{height:24px;border-radius:5px;background:#1a1a2c}.sn div.on{background:var(--y);box-shadow:0 0 8px var(--y)}
+.rv div{height:auto;background:none;text-align:center;font-size:10px;color:var(--dim)}.rv div.hot{color:var(--y)}
+.b{display:inline-block;padding:2px 10px;border-radius:20px;border:1px solid;font-size:11px}
+.b.no{color:var(--r)}.b.wait{color:var(--y)}.b.ok{color:var(--g)}
+.bar{height:4px;background:#1a1a2c;border-radius:2px;margin-top:8px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--c)}
+label{display:block;font-size:10px;letter-spacing:.18em;color:var(--dim);margin-bottom:4px}
+input[type=number]{width:100%;background:#090912;border:1px solid var(--ln);border-radius:10px;color:var(--y);font:inherit;font-size:16px;padding:10px}
+input[type=range]{flex:1;accent-color:var(--y)}
+.dp{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;max-width:260px;margin:0 auto;user-select:none;-webkit-user-select:none}
+.dp button{padding:18px 0;font-size:20px;touch-action:none}
+#log{height:110px;overflow:auto;font-size:11px;color:var(--dim);background:#090912;border-radius:10px;padding:8px;white-space:pre-wrap}
+.s{font-size:11px;color:var(--dim)}.dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--r);margin-right:6px}.dot.on{background:var(--g)}
+html{-webkit-text-size-adjust:100%}
+body{padding:calc(12px + env(safe-area-inset-top)) 12px calc(96px + env(safe-area-inset-bottom));-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
+button{min-height:48px;font-size:14px;user-select:none;-webkit-user-select:none}
+input[type=number]{font-size:16px;min-height:46px}
+input[type=range]{min-height:36px}
+.dp{max-width:300px;gap:10px}.dp button{min-height:64px;font-size:24px}
+#bar{position:fixed;left:0;right:0;bottom:0;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:linear-gradient(transparent,#07070d 30%);display:flex;justify-content:center;z-index:9}
+#bar button{width:100%;max-width:560px;min-height:56px;font-size:17px;font-weight:700;background:#1a0a10}
+@media (max-width:420px){.card{padding:12px}.v{font-size:17px}.g3{gap:8px}button{letter-spacing:.03em;font-size:13px}}
+@keyframes pop{0%{transform:scale(1);background:#1a3a2a}40%{transform:scale(1.06);background:#1f5a3a}100%{transform:scale(1)}}
+.box.pop{animation:pop .6s}
+</style></head><body><div class="w">
 
-  <!-- GIÁM SÁT TRỰC TIẾP -->
-  <div class="card">
-    <h3>Giám sát Trạng thái & 12 Mắt Cảm Biến (Trái 1 ➔ Phải 12)</h3>
-    <div class="leds" id="ledBar"></div>
-    <div class="status-grid">
-      <div class="stat-box"><div class="stat-label">CHẾ ĐỘ</div><div class="stat-val" id="stMode">IDLE</div></div>
-      <div class="stat-box"><div class="stat-label">TRẠNG THÁI XỬ LÝ</div><div class="stat-val" id="stCase" style="color:var(--amber)">-</div></div>
-      <div class="stat-box"><div class="stat-label">THỜI GIAN ĐUA</div><div class="stat-val" id="stTime" style="color:var(--green)">0.00s</div></div>
-      <div class="stat-box"><div class="stat-label">VỊ TRÍ / SAI SỐ</div><div class="stat-val" id="stPos">5500 / 0</div></div>
-      <div class="stat-box"><div class="stat-label">TỐC ĐỘ ĐỘNG</div><div class="stat-val" id="stSpd">0</div></div>
-      <div class="stat-box"><div class="stat-label">NÉT ĐỨT / VẠCH ĐEN</div><div class="stat-val" id="stCnt">0 / 0</div></div>
-    </div>
-  </div>
+<div class="card row" style="align-items:center"><b style="color:var(--g);letter-spacing:.2em">ROBOT BLE</b>
+<span class="s" style="text-align:right"><span class="dot" id="dot"></span><span id="ct">Chưa kết nối</span></span></div>
+<button class="cn" id="bConn">⚡ Kết nối BLE</button>
 
-  <!-- MENU CHỈNH THÔNG SỐ -->
-  <div class="card">
-    <div class="top-bar" style="margin-bottom:10px;">
-      <h3 style="margin:0;">Menu Tinh Chỉnh Bám Line & Tốc Độ Động</h3>
-      <div style="display:flex; gap:6px; flex-wrap:wrap;">
-        <button onclick="applyPreset('safe')">Preset: An Toàn</button>
-        <button class="btn-amber" onclick="applyPreset('race')">Preset: Đua 12s (Đối thủ)</button>
-        <button class="btn-blue" onclick="sendAllCfg()">GỬI XUỐNG XE</button>
-        <button class="btn-green" onclick="sendCmd('SAVE')">LƯU FLASH ESP32</button>
-      </div>
-    </div>
-
-    <div class="param-grid" id="paramContainer"></div>
-  </div>
-
-  <!-- ĐIỀU KHIỂN TAY & LOG -->
-  <div class="card" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap:12px;">
-    <div>
-      <h3>Điều khiển Manual</h3>
-      <div class="param-ctrl" style="margin-bottom:8px;">
-        <span>Tốc độ Manual:</span>
-        <input type="range" min="40" max="255" value="130" oninput="document.getElementById('mSpd').value=this.value; sendCmd('SPD:'+this.value)">
-        <input type="number" id="mSpd" value="130" readonly>
-      </div>
-      <div class="dpad">
-        <div></div>
-        <button onmousedown="sendCmd('FWD')" onmouseup="sendCmd('STP')" ontouchstart="sendCmd('FWD')" ontouchend="sendCmd('STP')">▲</button>
-        <div></div>
-        <button onmousedown="sendCmd('LFT')" onmouseup="sendCmd('STP')" ontouchstart="sendCmd('LFT')" ontouchend="sendCmd('STP')">◀</button>
-        <button class="btn-red" onclick="sendCmd('STP')">■</button>
-        <button onmousedown="sendCmd('RGT')" onmouseup="sendCmd('STP')" ontouchstart="sendCmd('RGT')" ontouchend="sendCmd('STP')">▶</button>
-        <div></div>
-        <button onmousedown="sendCmd('BWD')" onmouseup="sendCmd('STP')" ontouchstart="sendCmd('BWD')" ontouchend="sendCmd('STP')">▼</button>
-        <div></div>
-      </div>
-    </div>
-    <div>
-      <h3>Nhật ký hệ thống (BLE Log)</h3>
-      <div id="logBox"></div>
-    </div>
-  </div>
+<div class="card"><div class="t">◈ Trạng thái</div>
+<div class="g2">
+<div class="box"><div class="k">MODE</div><div class="v" id="sMode" style="color:var(--g)">IDLE</div></div>
+<div class="box"><div class="k">CASE</div><div class="v" id="sCase" style="color:var(--c)">-</div></div>
+<div class="box"><div class="k">POSITION</div><div class="v" id="sPos" style="color:var(--y)">3500</div></div>
+<div class="box"><div class="k">ERROR</div><div class="v" id="sErr" style="color:var(--r)">0</div></div>
+<div class="box" id="bC1"><div class="k">C1 · 000…0 (TRẮNG)</div><div class="v" id="sC1" style="color:var(--c)">0</div></div>
+<div class="box" id="bC2"><div class="k">C2 · 111…1 (ĐEN)</div><div class="v" id="sC2" style="color:var(--y)">0</div></div>
+<div class="box"><div class="k">TỐC ĐỘ XE</div><div class="v" id="sV" style="color:var(--c)">0</div></div>
+<div class="box" id="bT" style="border-color:var(--g)"><div class="k">THỜI GIAN · <span id="sTs">CHƯA CHẠY</span></div><div class="v" id="sT" style="color:var(--g)">0:00.00</div></div></div>
+<div class="t" style="margin:12px 0 0">Sensor pattern (1 → 8)</div>
+<div class="sn" id="pat"></div><div class="sn rv" id="raw"></div>
+<div class="row" style="margin-top:10px;align-items:center">
+<button id="bTest" style="padding:9px" disabled>Test cảm biến</button>
+<label class="s" style="margin:0;display:flex;gap:6px;align-items:center;letter-spacing:0"><input type="checkbox" id="flip">Đảo chiều hiển thị</label></div>
 </div>
 
+<div class="card"><div class="t">◈ Calibrate &amp; chạy</div>
+<div class="g3"><button class="cal" id="bCal" disabled>① Calib</button><button class="run" id="bRun" disabled>② Chạy</button><button class="stop" id="bStop" disabled>■ Dừng</button></div>
+<div style="margin-top:10px" class="s">Calib: <span class="b no" id="cb">Chưa calib</span></div>
+<div class="bar"><i id="cbar"></i></div>
+<div class="s" style="margin-top:8px;line-height:1.5">Bấm Calib rồi lướt cả 12 mắt qua vạch và nền trong 5 giây. Báo "Đã calib" thì nút Chạy mới mở.</div></div>
+
+<div class="card"><div class="t">◈ Chỉnh PID — lái = Kp·e + Ki·∫e + Kd·Δe</div>
+<div class="g2"><div><label>KP</label><input type="number" id="kp" step="0.001" value="0.025"></div>
+<div><label>KI</label><input type="number" id="ki" step="0.0001" value="0.0002"></div>
+<div><label>KD</label><input type="number" id="kd" step="0.01" value="0.2"></div>
+<div><label>TỐC ĐỘ TỐI ĐA (BASE)</label><input type="number" id="base" step="1" min="0" max="255" value="150"></div></div>
+<div class="t" style="margin:14px 0 8px">Tốc độ theo đường</div>
+<div class="g2"><div><label>TỐC ĐỘ TỐI THIỂU</label><input type="number" id="vmin" step="5" min="0" max="255" value="100"></div>
+<div><label>GIẢM TỐC TỪ SAI SỐ</label><input type="number" id="eslow" step="100" min="200" max="5500" value="2500"></div></div>
+<div class="s" style="margin:8px 0;line-height:1.5">Đường thẳng chạy tốc độ tối đa. Sai số hoặc lái càng lớn (cua, răng cưa) thì xe giảm dần xuống tốc độ tối thiểu. "Giảm tốc từ sai số" càng nhỏ thì xe giảm tốc càng sớm.</div>
+<div class="g2" style="margin-top:10px"><button id="bPid" disabled>Gửi PID &amp; tốc độ</button><button id="bGet" disabled>⟳ Đọc từ robot</button></div></div>
+
+<div class="card"><div class="t">◈ Chỉnh góc rẽ (cua vuông)</div>
+<div class="g3"><div><label>TỐC CUA</label><input type="number" id="tbase" step="5" min="0" max="255" value="150"></div>
+<div><label>NGOÀI +</label><input type="number" id="tout" step="5" min="0" max="255" value="70"></div>
+<div><label>TRONG −</label><input type="number" id="tin" step="5" min="-255" max="400" value="90"></div></div>
+<div class="s" style="margin:8px 0;line-height:1.5">Bánh ngoài = Tốc cua + Ngoài, bánh trong = Tốc cua − Trong. Tốc cua độc lập với tốc độ chạy thẳng nên tăng BASE không làm cua nhanh theo. Cũng là tốc độ quay tìm line khi mất line ở góc cua.</div>
+<button style="width:100%" id="bTurn" disabled>Gửi góc rẽ</button></div>
+
+<div class="card"><div class="t">◈ Tốc độ (điều khiển tay)</div>
+<div class="row" style="align-items:center"><span class="s" style="flex:0">30</span><input type="range" id="spd" min="30" max="255" value="120"><span class="s" style="flex:0">255</span><b id="sv" style="flex:0;color:var(--y);font-size:20px;min-width:44px;text-align:right">120</b></div></div>
+
+<div class="card"><div class="t">◈ Di chuyển</div>
+<div class="dp"><span></span><button data-c="FWD" disabled>▲</button><span></span>
+<button data-c="LFT" disabled>◀</button><button data-c="STP" disabled style="color:var(--r)">■</button><button data-c="RGT" disabled>▶</button>
+<span></span><button data-c="BWD" disabled>▼</button><span></span></div></div>
+
+<div class="card" id="logcard"><div class="t">◈ Log</div><div id="log"></div></div>
+</div>
+<div id="bar"><button class="stop" id="bStop2" disabled>■ DỪNG KHẨN CẤP</button></div>
 <script>
-const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
-const RX_UUID      = "6e400002-b5a3-f393-e0a9-e50e24dcca9e";
-const TX_UUID      = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
-let rxChar = null;
-
-// Khởi tạo 12 LED
-const ledBar = document.getElementById('ledBar');
-for (let i = 1; i <= 12; i++) {
-  ledBar.innerHTML += `<div class="led" id="led${i}">${i}</div>`;
+const SVC="6e400001-b5a3-f393-e0a9-e50e24dcca9e",RXU="6e400002-b5a3-f393-e0a9-e50e24dcca9e",TXU="6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+const $=i=>document.getElementById(i);
+let dev=null,rx=null,tx=null,calT=null,bound=false;
+const enc=new TextEncoder(),dec=new TextDecoder();
+let NS=0;
+function build(n){
+  if(n===NS||!(n>0&&n<=16))return;NS=n;
+  for(const id of ["pat","raw"]){const e=$(id);e.innerHTML="";e.style.gridTemplateColumns=`repeat(${n},1fr)`;
+    for(let i=0;i<n;i++){const d=document.createElement("div");if(id==="raw")d.textContent="-";e.append(d)}}
 }
+build(8);
+const log=m=>{const l=$("log");l.textContent+=m+"\n";if(l.textContent.length>6000)l.textContent=l.textContent.slice(-4000);l.scrollTop=l.scrollHeight};
+const connected=()=>!!(dev&&dev.gatt.connected&&rx);
 
-// Danh sách 15 thông số tinh chỉnh
-const PARAMS = [
-  { id: 'kp',   name: 'KP (Độ nhạy bám tâm)', desc: 'Tăng nếu xe phản ứng chậm ở đường cong', min: 0.005, max: 0.12, step: 0.001, val: 0.032 },
-  { id: 'kd',   name: 'KD (Chống văng & Giảm chấn)', desc: 'Tăng để ghìm mũi xe không lắc khi chạy nhanh', min: 0.0, max: 1.2, step: 0.01, val: 0.28 },
-  { id: 'maxs', name: 'MAX_SPD (Tốc độ Max đoạn thẳng)', desc: 'Tốc độ phóng tối đa khi đi thẳng (0-255)', min: 80, max: 255, step: 1, val: 210 },
-  { id: 'mins', name: 'MIN_SPD (Tốc độ nền vào cua)', desc: 'Tốc độ tự hạ xuống khi vào răng cưa / góc cua', min: 50, max: 220, step: 1, val: 105 },
-  { id: 'kdec', name: 'K_DECEL (Hệ số giảm tốc tự động)', desc: 'Càng cao xe càng giảm tốc mạnh khi chớm lệch tâm', min: 0.0, max: 0.08, step: 0.002, val: 0.022 },
-  { id: 'tout', name: 'TURN_OUT (Bánh ngoài khi cua gắt)', desc: 'Tốc độ bánh ngoài khi mắt rìa chạm góc vuông', min: 60, max: 255, step: 1, val: 175 },
-  { id: 'tin',  name: 'TURN_IN (Bánh trong khi cua gắt)', desc: 'Số âm để xoay lùi bánh trong giúp bẻ góc 90° cực nhanh', min: -220, max: 150, step: 5, val: -85 },
-  { id: 'sout', name: 'SPIN_OUT (Bánh ngoài khi văng cua)', desc: 'Tốc độ xoay tìm lại line ở đỉnh răng cưa', min: 80, max: 255, step: 5, val: 190 },
-  { id: 'sin',  name: 'SPIN_IN (Bánh trong khi văng cua)', desc: 'Tốc độ lùi bánh trong khi văng khỏi góc nhọn', min: -255, max: 0, step: 5, val: -140 },
-  { id: 'derr', name: 'DASH_ERR (Ngưỡng nhận diện Nét Đứt)', desc: 'Nếu |error| < ngưỡng này trước khi mất line -> Phóng thẳng', min: 500, max: 4000, step: 100, val: 1800 },
-  { id: 'dms',  name: 'DASH_MAX_MS (Thời gian vượt Nét Đứt)', desc: 'Thời gian tối đa giữ chạy thẳng qua mỗi nhịp trắng (ms)', min: 100, max: 1000, step: 20, val: 450 },
-  { id: 'bms',  name: 'BRAKE_MS (Phanh xung trước góc vuông)', desc: 'Nhấp phanh ngược (ms) khi từ đường thẳng lao vào góc 90°', min: 0, max: 80, step: 2, val: 20 },
-  { id: 'scnt', name: 'STOP_CNT2 (Số vạch đen để dừng)', desc: 'Đếm đủ số ô đen toàn bộ (sau IGNORE_MS) sẽ phanh dừng', min: 1, max: 5, step: 1, val: 1 },
-  { id: 'igms', name: 'IGNORE_MS (Bỏ qua vạch đen đầu)', desc: 'Thời gian đầu (ms) bỏ qua vạch chữ thập ngay sau START', min: 0, max: 5000, step: 100, val: 1800 },
-  { id: 'sthr', name: 'SENSOR_THR (Ngưỡng đen/trắng)', desc: 'Ngưỡng nhận diện mắt thấy line đen (0..1000)', min: 200, max: 800, step: 10, val: 450 }
-];
+// ---- gửi lệnh theo hàng đợi (tránh lỗi "GATT operation already in progress")
+let q=Promise.resolve();
+function send(c){q=q.then(async()=>{if(!connected())return;try{await rx.writeValueWithoutResponse(enc.encode(c))}catch(e){log("Lỗi gửi "+c+": "+e.message)}});return q}
 
-const pContainer = document.getElementById('paramContainer');
-PARAMS.forEach(p => {
-  pContainer.innerHTML += `
-    <div class="param-item">
-      <div class="param-head"><span>${p.name}</span></div>
-      <div class="param-desc">${p.desc}</div>
-      <div class="param-ctrl">
-        <input type="range" id="rng_${p.id}" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.val}"
-               oninput="document.getElementById('num_${p.id}').value=this.value">
-        <input type="number" id="num_${p.id}" min="${p.min}" max="${p.max}" step="${p.step}" value="${p.val}"
-               oninput="document.getElementById('rng_${p.id}').value=this.value">
-      </div>
-    </div>`;
+// ---- ghép gói nhận: tách theo điểm bắt đầu {  LOG:  RAW:  PID:
+let buf="",flushT=null;
+const START=/\{|LOG:|RAW:|PID:/g;
+function feed(s){
+  buf+=s;
+  for(;;){
+    START.lastIndex=1;const m=START.exec(buf);
+    if(buf[0]==="{"){const e=buf.indexOf("}");if(e>=0){msg(buf.slice(0,e+1));buf=buf.slice(e+1);continue}}
+    else if(m){msg(buf.slice(0,m.index));buf=buf.slice(m.index);continue}
+    break;
+  }
+  clearTimeout(flushT);flushT=setTimeout(()=>{if(buf){msg(buf);buf=""}},80);
+}
+function msg(t){
+  t=t.trim();if(!t)return;
+  if(t[0]==="{"){try{status(JSON.parse(t))}catch(e){}return}
+  if(t.startsWith("RAW:")){const p=t.slice(4).split(",");build(p.length);[...$("raw").children].forEach((d,i)=>{d.textContent=p[i]??"-";d.classList.toggle("hot",+p[i]>500)});return}
+  if(t.startsWith("PID:")){const p=t.slice(4).split(",").map(Number);if(p.length>=5&&p.every(isFinite)){$("kp").value=p[0];$("kd").value=p[1];$("base").value=p[2];$("tout").value=p[3];$("tin").value=p[4];if(p.length>=9){$("ki").value=p[5];$("vmin").value=p[6];$("eslow").value=p[7];$("tbase").value=p[8]}log("Đã đọc PID, tốc độ và góc rẽ từ robot")}return}
+  log(t);
+}
+const lastC={};
+function count(vid,bid,v){
+  if(v===undefined)return;
+  const el=$(vid);if(el.textContent!==String(v)){
+    if(lastC[vid]!==undefined&&v>lastC[vid]){const b=$(bid);b.classList.remove("pop");void b.offsetWidth;b.classList.add("pop");log((vid==="sC1"?"C1":"C2")+" = "+v)}
+    el.textContent=v}
+  lastC[vid]=v;
+}
+let tl={run:false,start:0,last:0};
+function fmtT(ms){const s=ms/1000,m=Math.floor(s/60);return m+":"+(s-m*60).toFixed(2).padStart(5,"0")}
+function showTime(o){
+  let ms;
+  if(o.t!==undefined)ms=o.t;                       // thời gian do robot đo (chính xác nhất)
+  else{                                            // dự phòng: web tự bấm giờ khi mode = AUTO
+    if(o.mode==="AUTO"){if(!tl.run){tl.run=true;tl.start=Date.now()}tl.last=Date.now()-tl.start}else tl.run=false;
+    ms=tl.last;
+  }
+  const run=o.mode==="AUTO";
+  $("sT").textContent=fmtT(ms);$("sT").style.color=run?"var(--y)":"var(--g)";
+  $("sTs").textContent=run?"ĐANG CHẠY":(ms>0?"ĐÃ DỪNG":"CHƯA CHẠY");
+}
+function status(o){
+  $("sV").textContent=o.v??"-";showTime(o);
+  $("sMode").textContent=o.mode;$("sCase").textContent=o.case;$("sPos").textContent=o.pos;$("sErr").textContent=o.err;
+  const f=$("flip").checked,live=(o.cal===undefined||o.cal===1),pt=o.pat||"00000000";
+  build(pt.length);
+  [...$("pat").children].forEach((d,i)=>d.classList.toggle("on",live&&(f?pt[pt.length-1-i]:pt[i])==="1"));
+  const c1=o.c1??o.cnt,c2=o.c2??o.cntb;
+  count("sC1","bC1",c1);count("sC2","bC2",c2);
+  if(o.cal!==undefined)setCal(o.cal);
+}
+function setCal(st){
+  const b=$("cb");b.className="b "+(st==1?"ok":st==2?"wait":"no");
+  b.textContent=st==1?"Đã calib":st==2?"Đang calib...":"Chưa calib";
+  $("bRun").disabled=!(st==1&&connected());$("bCal").disabled=(st==2)||!connected();
+  if(st==2){if(!calT){const t0=Date.now();calT=setInterval(()=>{$("cbar").style.width=Math.min(100,(Date.now()-t0)/50)+"%"},100)}}
+  else if(calT){clearInterval(calT);calT=null;$("cbar").style.width=st==1?"100%":"0"}
+}
+function ui(on){
+  ["bCal","bStop","bStop2","bPid","bGet","bTest","bTurn"].forEach(i=>$(i).disabled=!on);
+  document.querySelectorAll(".dp button").forEach(b=>b.disabled=!on);
+  if(!on)$("bRun").disabled=true;
+  $("dot").classList.toggle("on",on);$("ct").textContent=on?"Đã kết nối":"Chưa kết nối";
+  $("bConn").textContent=on?"✕ Ngắt kết nối":"⚡ Kết nối BLE";
+}
+let wl=null;
+async function keepAwake(on){try{if(on&&navigator.wakeLock)wl=await navigator.wakeLock.request("screen");else if(wl){await wl.release();wl=null}}catch(e){}}
+function lost(){[...$("pat").children].forEach(d=>d.classList.remove("on"));keepAwake(false);rx=null;tx=null;ui(false);setCal(0);log("Mất kết nối")}
+
+$("bConn").onclick=async()=>{
+  if(connected()){dev.gatt.disconnect();return}
+  if(!navigator.bluetooth){log("Trình duyệt này không hỗ trợ Web Bluetooth. Android: dùng Chrome. iPhone: dùng app Bluefy.");return}
+  try{
+    dev=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[SVC]});
+    dev.addEventListener("gattserverdisconnected",lost);
+    const srv=await dev.gatt.connect();
+    const s=await srv.getPrimaryService(SVC);
+    rx=await s.getCharacteristic(RXU);tx=await s.getCharacteristic(TXU);
+    tx.addEventListener("characteristicvaluechanged",e=>feed(dec.decode(e.target.value)));
+    await tx.startNotifications();
+    ui(true);setCal(0);keepAwake(true);log("Đã kết nối "+(dev.name||""));
+    setTimeout(()=>send("GETPID"),300);
+  }catch(e){log("Kết nối lỗi: "+e.message);if(dev&&dev.gatt.connected)dev.gatt.disconnect()}
+};
+
+$("bCal").onclick=()=>{send("CAL");setCal(2);log("Calib 5s: lướt cả 12 mắt qua vạch và nền")};
+$("bRun").onclick=()=>send("AUTO");
+$("bStop").onclick=()=>{send("MANUAL");send("STP")};
+$("bStop2").onclick=()=>$("bStop").click();
+$("bTest").onclick=()=>send("TEST");
+const n=i=>parseFloat($(i).value);
+const cl=x=>Math.min(255,Math.max(0,x));
+$("bPid").onclick=()=>{
+  const kp=n("kp"),ki=n("ki"),kd=n("kd"),b=Math.round(n("base")),vm=Math.round(n("vmin")),es=Math.round(n("eslow"));
+  if(![kp,ki,kd,b,vm,es].every(isFinite)){log("Thông số PID/tốc độ không hợp lệ");return}
+  send(`PID:${kp},${kd},${cl(b)},${ki}`);
+  send(`PROF:${cl(vm)},${es}`);
+};
+$("bTurn").onclick=()=>{
+  const o=Math.round(n("tout")),i=Math.round(n("tin")),tb=Math.round(n("tbase"));
+  if(![o,i,tb].every(isFinite)){log("Góc rẽ không hợp lệ");return}
+  send(`TURN:${o},${i},${cl(tb)}`);
+};
+$("bGet").onclick=()=>send("GETPID");
+$("spd").oninput=e=>$("sv").textContent=e.target.value;
+$("spd").onchange=e=>send("SPD:"+e.target.value);
+
+document.querySelectorAll(".dp button").forEach(b=>{
+  const c=b.dataset.c;
+  b.addEventListener("pointerdown",e=>{e.preventDefault();b.setPointerCapture(e.pointerId);send(c)});
+  const up=e=>{e.preventDefault();if(c!=="STP")send("STP")};
+  b.addEventListener("pointerup",up);b.addEventListener("pointercancel",up);
 });
-
-function setParamUI(id, val) {
-  document.getElementById('rng_' + id).value = val;
-  document.getElementById('num_' + id).value = val;
-}
-
-function applyPreset(type) {
-  if (type === 'safe') {
-    const s = { kp:0.028, kd:0.22, maxs:155, mins:90, kdec:0.018, tout:145, tin:-60, sout:160, sin:-110, derr:1800, dms:450, bms:15, scnt:1, igms:2000, sthr:450 };
-    Object.keys(s).forEach(k => setParamUI(k, s[k]));
-  } else {
-    const r = { kp:0.034, kd:0.32, maxs:225, mins:105, kdec:0.025, tout:185, tin:-95, sout:200, sin:-150, derr:1900, dms:450, bms:24, scnt:1, igms:1600, sthr:450 };
-    Object.keys(r).forEach(k => setParamUI(k, r[k]));
-  }
-  sendAllCfg();
-}
-
-function log(msg) {
-  const box = document.getElementById('logBox');
-  box.innerHTML += `<div>> ${msg}</div>`;
-  box.scrollTop = box.scrollHeight;
-}
-
-async function connectBLE() {
-  try {
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [{ name: 'ROBOT_BLE' }],
-      optionalServices: [SERVICE_UUID]
-    });
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService(SERVICE_UUID);
-    rxChar = await service.getCharacteristic(RX_UUID);
-    const txChar = await service.getCharacteristic(TX_UUID);
-    await txChar.startNotifications();
-    txChar.addEventListener('characteristicvaluechanged', onNotify);
-    document.getElementById('connStatus').innerText = "Đã kết nối: " + device.name;
-    document.getElementById('connStatus').style.color = "#22c55e";
-    log("Đã kết nối BLE thành công!");
-    sendCmd("GETCFG");
-  } catch (e) {
-    log("Lỗi kết nối: " + e);
-  }
-}
-
-async function sendCmd(cmd) {
-  if (!rxChar) return log("Chưa kết nối BLE!");
-  const enc = new TextEncoder();
-  await rxChar.writeValue(enc.encode(cmd));
-}
-
-function sendAllCfg() {
-  const vals = PARAMS.map(p => document.getElementById('num_' + p.id).value);
-  sendCmd("SETALL:" + vals.join(','));
-}
-
-function onNotify(e) {
-  const str = new TextDecoder().decode(e.target.value).trim();
-  if (str.startsWith("{")) {
-    try {
-      const d = JSON.parse(str);
-      document.getElementById('stMode').innerText = d.mode;
-      document.getElementById('stCase').innerText = d.case;
-      document.getElementById('stTime').innerText = ((d.ms || 0) / 1000).toFixed(2) + "s";
-      document.getElementById('stPos').innerText  = `${d.pos} / ${d.err}`;
-      document.getElementById('stSpd').innerText  = d.spd;
-      document.getElementById('stCnt').innerText  = `${d.c1} / ${d.c2}`;
-      if (d.pat) {
-        for (let i = 0; i < 12; i++) {
-          const el = document.getElementById('led' + (i + 1));
-          if (d.pat[i] === '1') el.classList.add('on');
-          else el.classList.remove('on');
-        }
-      }
-    } catch {}
-  } else if (str.startsWith("CFG:")) {
-    const parts = str.substring(4).split(',');
-    if (parts.length === PARAMS.length) {
-      PARAMS.forEach((p, idx) => setParamUI(p.id, parseFloat(parts[idx])));
-      log("Đã đồng bộ cấu hình từ ESP32!");
-    }
-  } else {
-    log(str);
-  }
-}
-</script>
-</body>
-</html>
+document.addEventListener("visibilitychange",()=>{if(document.hidden&&connected())send("STP");else if(connected())keepAwake(true)});
+ui(false);
+</script></body></html>
